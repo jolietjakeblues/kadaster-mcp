@@ -1,0 +1,170 @@
+{
+  "project": {
+    "name": "kadaster-kkg-mcp",
+    "doel": "MCP-server voor het bevragen van de Kadaster Knowledge Graph (KKG) SPARQL-endpoint, naar analogie van de bestaande rce-cho-mcp (GitHub: jolietjakeblues/rce-cho-mcp) die hetzelfde doet voor het RCE CHO-endpoint.",
+    "referentie_architectuur": "rce-cho-mcp gebruikt een driestaps-workflow: plan_question -> build_query -> query_sparql (en query_sparql_json voor programmatische verwerking). Dat patroon wordt hier hergebruikt.",
+    "auteur_context": "Gebouwd door Joop (RCE, Rijksdienst voor het Cultureel Erfgoed), die bekend is met linked data, SPARQL en het schrijven van MCP-connectoren."
+  },
+  "endpoint": {
+    "sparql_endpoint": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql",
+    "methode": "GET met query-param 'query', header Accept: application/sparql-results+json",
+    "status": "Bevestigd bereikbaar en werkend vanuit sandbox op 2026-07-03 (ASK {?s ?p ?o} -> true)",
+    "opmerking": "Root van api.labs.kadaster.nl geeft 404 (verwacht, geen API-docs-pagina op root). Alleen het specifieke SPARQL-pad is relevant."
+  },
+  "namespaces_gebruikt": {
+    "imxgeo": "http://modellen.geostandaarden.nl/def/imx-geo#",
+    "ext": "https://modellen.kkg.kadaster.nl/def/imxgeo-ext#",
+    "bag": "https://bag.basisregistraties.overheid.nl/def/bag#",
+    "bgt": "https://bgt.basisregistraties.overheid.nl/def/bgt#",
+    "nen3610": "http://modellen.geostandaarden.nl/def/nen3610#",
+    "geosparql": "http://www.opengis.net/ont/geosparql#",
+    "prov": "http://www.w3.org/ns/prov#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#"
+  },
+  "bevestigde_classes": [
+    {"class": "imxgeo:Adres", "aantal_ca": 10643974, "opmerking": "komt overeen met bag:Nummeraanduiding (zelfde aantal)"},
+    {"class": "imxgeo:Perceel", "aantal_ca": 8385851},
+    {"class": "imxgeo:Gebouw", "aantal_ca": 11209042, "opmerking": "komt overeen met bgt:Pand"},
+    {"class": "bag:Pand", "aantal_ca": 12874144},
+    {"class": "imxgeo:Bouwwerk", "aantal_ca": 14789487},
+    {"class": "imxgeo:Registratiegegevens", "aantal_ca": 68847236},
+    {"class": "imxgeo:Beperking", "bevestigd": true, "opmerking": "bestaan bevestigd via ASK, niet apart geteld"},
+    {"class": "geosparql:Geometry", "aantal_ca": 83581190}
+  ],
+  "bevestigde_properties": {
+    "imxgeo:Perceel": [
+      "rdfs:label",
+      "imxgeo:ligtInRegistratieveRuimte",
+      "imxgeo:registratiegegevens",
+      "nen3610:domein",
+      "nen3610:identificatie",
+      "geosparql:hasGeometry",
+      "geosparql:hasMetricArea",
+      "ext:perceelnummer",
+      "ext:sectie",
+      "ext:plaatscoordinaten",
+      "prov:specializationOf",
+      "prov:wasDerivedFrom"
+    ],
+    "imxgeo:Adres": [
+      "rdfs:label",
+      "imxgeo:huisnummer",
+      "imxgeo:huisletter",
+      "imxgeo:huisnummertoevoeging",
+      "imxgeo:straatnaam",
+      "imxgeo:postcode",
+      "imxgeo:plaatsnaam",
+      "imxgeo:isAdresVanGebouw",
+      "imxgeo:isHoofdadres",
+      "imxgeo:omschrijving",
+      "imxgeo:status",
+      "imxgeo:registratiegegevens",
+      "nen3610:domein",
+      "nen3610:identificatie",
+      "geosparql:hasGeometry",
+      "ext:straat",
+      "ext:vloerOppervlakte",
+      "prov:specializationOf",
+      "prov:wasDerivedFrom"
+    ],
+    "beperking_gerelateerd": [
+      "imxgeo:isBeperkingOpPerceel (bevestigd via ASK: true)",
+      "imxgeo:grondslagcode (bevestigd via ASK: true)",
+      "imxgeo:grondslag (bevestigd via ASK: true)"
+    ]
+  },
+  "voorbeeld_resultaten_ter_referentie": {
+    "beperking_sample": [
+      {
+        "beperking": "https://data.kkg.kadaster.nl/id/beperking/182240/1",
+        "perceel": "https://data.kkg.kadaster.nl/id/perceel/14690786570000/1",
+        "grondslagcode": "WBE",
+        "grondslag": "Wet bodembescherming: Instemming nazorgplan"
+      },
+      {
+        "beperking": "https://data.kkg.kadaster.nl/id/beperking/182241/1",
+        "perceel": "https://data.kkg.kadaster.nl/id/perceel/71820169870000/1",
+        "grondslagcode": "WOA",
+        "grondslag": "Wet algemene bepalingen omgevingsrecht: Oplegging last onder bestuursdwang en/of dwangsom dat ook geldt voor rechtsopvolgers"
+      }
+    ],
+    "uri_patroon_perceel": "https://data.kkg.kadaster.nl/id/perceel/{identificatie}/{versie}",
+    "uri_patroon_beperking": "https://data.kkg.kadaster.nl/id/beperking/{nummer}/{versie}"
+  },
+  "werkende_voorbeeldqueries": [
+    {
+      "naam": "adres_naar_perceel",
+      "doel": "BAG-adres opzoeken en het perceel eronder vinden via gebouw",
+      "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nSELECT ?per ?sectie ?perceelnummer WHERE {\n  ?adres a imxgeo:Adres ;\n    imxgeo:postcode \"1234AB\" ;\n    imxgeo:huisnummer 10 ;\n    imxgeo:isAdresVanGebouw ?geb .\n  ?geb imxgeo:bevindtZichOpPerceel ?per .\n  ?per <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#sectie> ?sectie ;\n       <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#perceelnummer> ?perceelnummer .\n} LIMIT 5",
+      "status": "gebruikt in productiescript, nog niet los in deze sessie geverifieerd; imxgeo:bevindtZichOpPerceel zelf niet apart getest"
+    },
+    {
+      "naam": "kadastrale_aanduiding_naar_perceel",
+      "doel": "Perceel vinden via gemeentenaam + sectie + perceelnummer (fallback als BAG-route faalt)",
+      "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nPREFIX ext: <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#>\nSELECT ?per WHERE {\n  ?per a imxgeo:Perceel ;\n    ext:sectie \"A\" ;\n    ext:perceelnummer 123 ;\n    imxgeo:ligtInRegistratieveRuimte ?plaats .\n  ?plaats imxgeo:naam ?plaatsnaam .\n  FILTER(CONTAINS(LCASE(?plaatsnaam), LCASE(\"Utrecht\")))\n} LIMIT 5",
+      "status": "gebruikt in productiescript; imxgeo:naam op de registratieve-ruimte-plaats is niet los geverifieerd in deze sessie -- aanrader: los testen"
+    },
+    {
+      "naam": "beperking_op_perceel",
+      "doel": "BRK-PB beperkingen ophalen die op een specifiek perceel rusten",
+      "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nSELECT ?grondslagcode ?grondslag WHERE {\n  ?beperking imxgeo:isBeperkingOpPerceel <PERCEEL_URI> ;\n    imxgeo:grondslagcode ?grondslagcode ;\n    imxgeo:grondslag ?grondslag .\n} LIMIT 5",
+      "status": "bevestigd werkend, echte resultaten opgehaald in deze sessie (zie voorbeeld_resultaten_ter_referentie)"
+    },
+    {
+      "naam": "classes_met_aantallen",
+      "doel": "Overzicht van alle rdf:type met counts, handig voor exploratie",
+      "sparql": "SELECT DISTINCT ?type (COUNT(?s) as ?cnt) WHERE {\n  ?s a ?type .\n} GROUP BY ?type ORDER BY DESC(?cnt) LIMIT 20",
+      "status": "bevestigd werkend, gebruikt om bovenstaande classes-lijst te genereren"
+    }
+  ],
+  "bekende_valkuilen": [
+    {
+      "probleem": "Brede FILTER(CONTAINS(...)) queries zonder class-restrictie op predicaatniveau kunnen timeouten",
+      "voorbeeld": "SELECT DISTINCT ?type (COUNT(?s) as ?cnt) WHERE { ?s a ?type . FILTER(CONTAINS(LCASE(STR(?type)), \"beperking\")) } GROUP BY ?type -- deze query gaf een read-timeout na 30s in deze sessie",
+      "advies": "Gebruik ASK-queries om het bestaan van een predicaat/class te checken (snel, bevestigd < 1s) in plaats van brede scan-achtige SELECT+FILTER over de hele graph. Analoog aan de geof:sfWithin-timeout-ervaring bij het RCE CHO-endpoint: vervang dure operaties door gerichte, geindexeerde patronen."
+    },
+    {
+      "probleem": "ASK-resultaten hebben geen 'results.bindings', maar een top-level 'boolean' veld",
+      "advies": "Zorg dat de MCP-tool die SPARQL-resultaten parsed, onderscheid maakt tussen SELECT-resultaten ({head, results.bindings}) en ASK-resultaten ({head, boolean})."
+    },
+    {
+      "probleem": "Root van api.labs.kadaster.nl geeft 404",
+      "advies": "Alleen het SPARQL-pad zelf gebruiken voor health-checks, niet de domeinroot."
+    }
+  ],
+  "voorgestelde_mcp_tools": [
+    {
+      "naam": "plan_question",
+      "beschrijving": "Neemt een natuurlijke-taal vraag en zet die om in een gestructureerd queryplan (welke classes/properties relevant zijn), naar analogie van rce-cho-mcp."
+    },
+    {
+      "naam": "build_query",
+      "beschrijving": "Bouwt op basis van het queryplan een concrete SPARQL-query, met de bekende namespaces uit dit document als defaults."
+    },
+    {
+      "naam": "query_sparql",
+      "beschrijving": "Voert een ruwe SPARQL-query uit tegen het KKG-endpoint en geeft het resultaat terug in leesbare vorm."
+    },
+    {
+      "naam": "query_sparql_json",
+      "beschrijving": "Zelfde als query_sparql, maar geeft het ruwe JSON-resultaat terug voor programmatische verwerking (voorkeur bij batch-scripts)."
+    },
+    {
+      "naam": "validate_query",
+      "beschrijving": "Valideert een SPARQL-query syntactisch zonder 'm uit te voeren, en waarschuwt bij patronen die bekend staan om te timeouten (zie bekende_valkuilen)."
+    }
+  ],
+  "aanbevolen_instellingen": {
+    "timeout_seconden": 60,
+    "sleep_tussen_requests_seconden": 0.3,
+    "max_retries": 4,
+    "retry_backoff_seconden": 2.0,
+    "opmerking": "Waarden overgenomen uit het bestaande productiescript build_csv_landelijk.py (RCE vs BRK-PB vergelijk), dat dezelfde rate-limiting-aanpak hanteert."
+  },
+  "gerelateerde_bestanden_lokaal": {
+    "build_csv_landelijk.py": "Bestaand Python-script (niet MCP) dat dit KKG-endpoint al bevraagt voor een landelijke vergelijking rijksmonumenten vs BRK-PB-beperkingen. Kan als referentie dienen voor querypatronen, maar is losstaand van de MCP en hoeft niet aangepast te worden."
+  },
+  "mcp_build_meta": {
+    "verificatiepoging_door_claude_code": "Bij het bouwen van deze MCP is geprobeerd imxgeo:bevindtZichOpPerceel en imxgeo:naam (op registratieve-ruimte) live te verifieren tegen het KKG-endpoint via curl. Dit werd geblokkeerd door het sandbox-netwerkbeleid (403 policy denial op CONNECT naar api.labs.kadaster.nl). Beide predicaten zijn daarom in de MCP als status 'unverified' gemarkeerd; tools die ze gebruiken (plan_question/build_query voor adres_naar_perceel en kadastrale_aanduiding_naar_perceel) geven hier expliciet een waarschuwing bij."
+  }
+}
