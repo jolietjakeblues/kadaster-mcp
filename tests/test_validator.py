@@ -44,3 +44,33 @@ def test_unverified_predicate_warns():
     )
     result = validate_query(q)
     assert any("bevindtZichOpPerceel" in w for w in result.warnings)
+
+
+def test_offset_over_10000_warns():
+    q = "SELECT ?s WHERE { ?s a <http://example.org/Foo> } ORDER BY ?s LIMIT 5000 OFFSET 8000"
+    result = validate_query(q)
+    assert any("10.000" in w or "Virtuoso" in w for w in result.warnings)
+
+
+def test_offset_under_10000_no_pagination_warning():
+    q = "SELECT ?s WHERE { ?s a <http://example.org/Foo> } ORDER BY ?s LIMIT 100 OFFSET 200"
+    result = validate_query(q)
+    assert not any("Virtuoso" in w for w in result.warnings)
+
+
+def test_imxgeo_naam_without_class_restriction_warns():
+    q = (
+        "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\n"
+        "SELECT ?naam WHERE { ?plaats imxgeo:naam ?naam } LIMIT 5"
+    )
+    result = validate_query(q)
+    assert any("Gemeentegebied" in w for w in result.warnings)
+
+
+def test_imxgeo_naam_with_class_restriction_no_warning():
+    q = (
+        "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\n"
+        "SELECT ?naam WHERE { ?plaats a imxgeo:Gemeentegebied ; imxgeo:naam ?naam } LIMIT 5"
+    )
+    result = validate_query(q)
+    assert not any("Gemeentegebied" in w for w in result.warnings)

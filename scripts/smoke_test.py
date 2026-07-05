@@ -7,8 +7,8 @@ Draai dit vanaf een omgeving die api.labs.kadaster.nl kan bereiken
     python scripts/smoke_test.py
 
 Voert de bevestigde queries uit de spec uit en toont resultaten, plus de
-twee nog niet los geverifieerde predicaten (bevindtZichOpPerceel, imxgeo:naam
-op registratieve-ruimte) als losse ASK-checks.
+nog niet los geverifieerde imxgeo:bevindtZichOpPerceel als losse ASK-check.
+(imxgeo:naam is inmiddels bevestigd op imxgeo:Gemeentegebied, 2026-07-05.)
 """
 
 from __future__ import annotations
@@ -33,14 +33,6 @@ def main() -> None:
         client.ask(
             "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\n"
             "ASK { ?geb imxgeo:bevindtZichOpPerceel ?per }"
-        )
-    )
-
-    print("\n=== ASK: imxgeo:naam bestaat ergens? (nog niet los geverifieerd) ===")
-    print(
-        client.ask(
-            "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\n"
-            "ASK { ?s imxgeo:naam ?o }"
         )
     )
 

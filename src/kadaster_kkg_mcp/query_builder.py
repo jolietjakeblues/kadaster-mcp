@@ -8,6 +8,7 @@ referentie en documentatie.
 
 from __future__ import annotations
 
+import inspect
 import re
 from typing import Any, Callable
 
@@ -64,6 +65,10 @@ def build_adres_naar_perceel(postcode: str, huisnummer: Any, limit: int = 5) -> 
 def build_kadastrale_aanduiding_naar_perceel(
     sectie: str, perceelnummer: Any, gemeente: str, limit: int = 5
 ) -> str:
+    """imxgeo:naam is alleen bevestigd op imxgeo:Gemeentegebied (2026-07-05); een
+    perceel ligt via imxgeo:ligtInRegistratieveRuimte ook in imxgeo:Buurt en
+    imxgeo:Woonplaats, dus de class-restrictie hieronder is verplicht om de
+    gemeentenaam te pakken i.p.v. een buurt-/woonplaatsnaam."""
     sectie = sectie.strip().upper().replace('"', "")
     perceelnummer = _validate_int(perceelnummer, "perceelnummer")
     gemeente = gemeente.strip().replace('"', "")
@@ -75,7 +80,8 @@ def build_kadastrale_aanduiding_naar_perceel(
         f'    ext:sectie "{sectie}" ;\n'
         f"    ext:perceelnummer {perceelnummer} ;\n"
         "    imxgeo:ligtInRegistratieveRuimte ?plaats .\n"
-        "  ?plaats imxgeo:naam ?plaatsnaam .\n"
+        "  ?plaats a imxgeo:Gemeentegebied ;\n"
+        "    imxgeo:naam ?plaatsnaam .\n"
         f'  FILTER(CONTAINS(LCASE(?plaatsnaam), LCASE("{gemeente}")))\n'
         f"}} LIMIT {limit}"
     )
@@ -103,19 +109,73 @@ def build_classes_met_aantallen(limit: int = 20) -> str:
     )
 
 
+def build_resource_coordinaten(resource_uri: str) -> str:
+    """Haalt het WGS84-punt (WKT) op van een resource via ext:plaatscoordinaten.
+    Bevestigd werkend 2026-07-05: geosparql:asWKT geeft 'POINT(lon lat)'."""
+    uri = _as_uri(resource_uri)
+    return (
+        f"{prefix_header(['ext', 'geosparql'])}\n"
+        "SELECT ?wkt WHERE {\n"
+        f"  {uri} ext:plaatscoordinaten ?geom .\n"
+        "  ?geom geosparql:asWKT ?wkt .\n"
+        "} LIMIT 1"
+    )
+
+
 _BUILDERS: dict[str, Callable[..., str]] = {
     "adres_naar_perceel": build_adres_naar_perceel,
     "kadastrale_aanduiding_naar_perceel": build_kadastrale_aanduiding_naar_perceel,
     "beperking_op_perceel": build_beperking_op_perceel,
     "classes_met_aantallen": build_classes_met_aantallen,
+    "resource_coordinaten": build_resource_coordinaten,
 }
 
 _TEMPLATE_UNVERIFIED_PREDICATES: dict[str, list[str]] = {
     "adres_naar_perceel": ["imxgeo:bevindtZichOpPerceel"],
-    "kadastrale_aanduiding_naar_perceel": ["imxgeo:naam"],
+    "kadastrale_aanduiding_naar_perceel": [],
     "beperking_op_perceel": [],
     "classes_met_aantallen": [],
+    "resource_coordinaten": [],
 }
+
+
+def build_paginated_query(
+    select_vars: str,
+    where_clause: str,
+    order_var: str,
+    cursor: str | None = None,
+    limit: int = 5000,
+    prefixes: list[str] | None = None,
+) -> str:
+    """Bouwt een SELECT met keyset-paginering, om Virtuoso's OFFSET-limiet
+    (LIMIT+OFFSET > 10.000 faalt hard) te omzeilen. Sorteert op STR(order_var)
+    i.p.v. de IRI zelf -- IRI-vergelijking met '>' bleek geen consistente
+    lexicografische volgorde te geven (overlappende pagina's).
+
+    Args:
+        select_vars: bv. '?perceel'.
+        where_clause: de WHERE-body zonder buitenste accolades, bv.
+            '?beperking imxgeo:isBeperkingOpPerceel ?perceel ; imxgeo:grondslagcode "EWE" .'
+        order_var: variabele om op te pagineren, bv. '?perceel' (met vraagteken).
+        cursor: laatst geziene waarde van order_var uit de vorige pagina (None voor pagina 1).
+    """
+    limit = _validate_int(limit, "limit")
+    if not order_var.startswith("?"):
+        raise QueryBuildError(f"order_var moet met '?' beginnen, kreeg: {order_var!r}")
+
+    cursor_filter = ""
+    if cursor:
+        cursor_escaped = cursor.replace("\\", "\\\\").replace('"', '\\"')
+        cursor_filter = f'  FILTER(STR({order_var}) > "{cursor_escaped}")\n'
+
+    header = prefix_header(prefixes) if prefixes else prefix_header()
+    return (
+        f"{header}\n"
+        f"SELECT {select_vars} WHERE {{\n"
+        f"  {where_clause}\n"
+        f"{cursor_filter}"
+        f"}} ORDER BY STR({order_var}) LIMIT {limit}"
+    )
 
 
 def available_templates() -> list[str]:
@@ -136,7 +196,16 @@ def build_query(template_name: str, params: dict[str, Any] | None = None) -> dic
             f"Onbekende template '{template_name}'. Beschikbaar: {', '.join(available_templates())}."
         )
 
-    sparql = builder(**params)
+    # plan_question kan extra, voor deze template irrelevante parameters
+    # meegeven (bv. zowel perceel_uri als resource_uri) -- filter op wat de
+    # builder daadwerkelijk accepteert.
+    accepted = set(inspect.signature(builder).parameters)
+    filtered_params = {k: v for k, v in params.items() if k in accepted}
+
+    try:
+        sparql = builder(**filtered_params)
+    except TypeError as exc:
+        raise QueryBuildError(f"Ontbrekende of onjuiste parameters voor '{template_name}': {exc}") from exc
     example = example_query_by_name(template_name)
     warnings = [
         f"Predicaat '{p}' is nog niet los tegen het live endpoint geverifieerd: "

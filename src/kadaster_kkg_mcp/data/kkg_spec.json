@@ -3,11 +3,12 @@
     "name": "kadaster-kkg-mcp",
     "doel": "MCP-server voor het bevragen van de Kadaster Knowledge Graph (KKG) SPARQL-endpoint, naar analogie van de bestaande rce-cho-mcp (GitHub: jolietjakeblues/rce-cho-mcp) die hetzelfde doet voor het RCE CHO-endpoint.",
     "referentie_architectuur": "rce-cho-mcp gebruikt een driestaps-workflow: plan_question -> build_query -> query_sparql (en query_sparql_json voor programmatische verwerking). Dat patroon wordt hier hergebruikt.",
-    "auteur_context": "Gebouwd door Joop (RCE, Rijksdienst voor het Cultureel Erfgoed), die bekend is met linked data, SPARQL en het schrijven van MCP-connectoren."
+    "auteur_context": "Gebouwd door Joop (RCE, Rijksdienst voor het Cultureel Erfgoed), die bekend is met linked data, SPARQL en het schrijven van MCP-connectoren.",
+    "laatst_bijgewerkt": "2026-07-05, na afronding landelijke vergelijking rijksmonumentenregister vs BRK-PB (build_csv_landelijk.py) en een proef voor het percelenvergelijk (vraag 2 van Ashok)."
   },
   "endpoint": {
     "sparql_endpoint": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql",
-    "methode": "GET met query-param 'query', header Accept: application/sparql-results+json",
+    "methode": "POST met form-data key 'query', header Accept: application/sparql-results+json. GET WERKT NIET BETROUWBAAR: bij VALUES-clauses met >~300-500 URI's (querystring >~30-40KB) geeft GET een HTTP 431 'Request Header Fields Too Large' (bevestigd 2026-07-05, getest tot 3000 URI's/255KB met POST zonder problemen).",
     "status": "Bevestigd bereikbaar en werkend vanuit sandbox op 2026-07-03 (ASK {?s ?p ?o} -> true)",
     "opmerking": "Root van api.labs.kadaster.nl geeft 404 (verwacht, geen API-docs-pagina op root). Alleen het specifieke SPARQL-pad is relevant."
   },
@@ -21,15 +22,43 @@
     "prov": "http://www.w3.org/ns/prov#",
     "rdfs": "http://www.w3.org/2000/01/rdf-schema#"
   },
+  "opmerking_gemeente": "Gemeentenaam van een perceel zit op de class imxgeo:Gemeentegebied (via imxgeo:ligtInRegistratieveRuimte -> imxgeo:naam), NIET op een aparte 'ext:Gemeente'-class (die bestaat niet). Een perceel ligt ook in een imxgeo:Buurt en imxgeo:Woonplaats via hetzelfde predicaat -- filter op 'a imxgeo:Gemeentegebied' om de juiste te pakken.",
   "bevestigde_classes": [
-    {"class": "imxgeo:Adres", "aantal_ca": 10643974, "opmerking": "komt overeen met bag:Nummeraanduiding (zelfde aantal)"},
-    {"class": "imxgeo:Perceel", "aantal_ca": 8385851},
-    {"class": "imxgeo:Gebouw", "aantal_ca": 11209042, "opmerking": "komt overeen met bgt:Pand"},
-    {"class": "bag:Pand", "aantal_ca": 12874144},
-    {"class": "imxgeo:Bouwwerk", "aantal_ca": 14789487},
-    {"class": "imxgeo:Registratiegegevens", "aantal_ca": 68847236},
-    {"class": "imxgeo:Beperking", "bevestigd": true, "opmerking": "bestaan bevestigd via ASK, niet apart geteld"},
-    {"class": "geosparql:Geometry", "aantal_ca": 83581190}
+    {
+      "class": "imxgeo:Adres",
+      "aantal_ca": 10643974,
+      "opmerking": "komt overeen met bag:Nummeraanduiding (zelfde aantal)"
+    },
+    {
+      "class": "imxgeo:Perceel",
+      "aantal_ca": 8385851
+    },
+    {
+      "class": "imxgeo:Gebouw",
+      "aantal_ca": 11209042,
+      "opmerking": "komt overeen met bgt:Pand"
+    },
+    {
+      "class": "bag:Pand",
+      "aantal_ca": 12874144
+    },
+    {
+      "class": "imxgeo:Bouwwerk",
+      "aantal_ca": 14789487
+    },
+    {
+      "class": "imxgeo:Registratiegegevens",
+      "aantal_ca": 68847236
+    },
+    {
+      "class": "imxgeo:Beperking",
+      "bevestigd": true,
+      "opmerking": "bestaan bevestigd via ASK, niet apart geteld"
+    },
+    {
+      "class": "geosparql:Geometry",
+      "aantal_ca": 83581190
+    }
   ],
   "bevestigde_properties": {
     "imxgeo:Perceel": [
@@ -71,6 +100,13 @@
       "imxgeo:isBeperkingOpPerceel (bevestigd via ASK: true)",
       "imxgeo:grondslagcode (bevestigd via ASK: true)",
       "imxgeo:grondslag (bevestigd via ASK: true)"
+    ],
+    "imxgeo:Gemeentegebied": [
+      "imxgeo:naam (de leesbare gemeentenaam, bv. 'Hof van Twente')"
+    ],
+    "geometrie": [
+      "ext:plaatscoordinaten -> knoop van type geosparql:Geometry",
+      "geo:asWKT op die knoop geeft 'POINT(lon lat)' in WGS84 (bevestigd 2026-07-05)"
     ]
   },
   "voorbeeld_resultaten_ter_referentie": {
@@ -101,8 +137,8 @@
     {
       "naam": "kadastrale_aanduiding_naar_perceel",
       "doel": "Perceel vinden via gemeentenaam + sectie + perceelnummer (fallback als BAG-route faalt)",
-      "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nPREFIX ext: <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#>\nSELECT ?per WHERE {\n  ?per a imxgeo:Perceel ;\n    ext:sectie \"A\" ;\n    ext:perceelnummer 123 ;\n    imxgeo:ligtInRegistratieveRuimte ?plaats .\n  ?plaats imxgeo:naam ?plaatsnaam .\n  FILTER(CONTAINS(LCASE(?plaatsnaam), LCASE(\"Utrecht\")))\n} LIMIT 5",
-      "status": "gebruikt in productiescript; imxgeo:naam op de registratieve-ruimte-plaats is niet los geverifieerd in deze sessie -- aanrader: los testen"
+      "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nPREFIX ext: <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#>\nSELECT ?per WHERE {\n  ?per a imxgeo:Perceel ;\n    ext:sectie \"A\" ;\n    ext:perceelnummer 123 ;\n    imxgeo:ligtInRegistratieveRuimte ?plaats .\n  ?plaats a imxgeo:Gemeentegebied ;\n    imxgeo:naam ?plaatsnaam .\n  FILTER(CONTAINS(LCASE(?plaatsnaam), LCASE(\"Utrecht\")))\n} LIMIT 5",
+      "status": "imxgeo:naam bevestigd, maar alleen op imxgeo:Gemeentegebied (2026-07-05) -- een perceel ligt via hetzelfde predicaat ook in imxgeo:Buurt/imxgeo:Woonplaats, dus de class-restrictie '?plaats a imxgeo:Gemeentegebied' is verplicht om de juiste 'plaats' (de gemeentenaam) te pakken."
     },
     {
       "naam": "beperking_op_perceel",
@@ -115,6 +151,18 @@
       "doel": "Overzicht van alle rdf:type met counts, handig voor exploratie",
       "sparql": "SELECT DISTINCT ?type (COUNT(?s) as ?cnt) WHERE {\n  ?s a ?type .\n} GROUP BY ?type ORDER BY DESC(?cnt) LIMIT 20",
       "status": "bevestigd werkend, gebruikt om bovenstaande classes-lijst te genereren"
+    },
+    {
+      "naam": "resource_coordinaten",
+      "doel": "WGS84-punt (lon/lat) ophalen voor een perceel/adres via ext:plaatscoordinaten -> geosparql:asWKT",
+      "sparql": "PREFIX ext: <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#>\nPREFIX geosparql: <http://www.opengis.net/ont/geosparql#>\nSELECT ?wkt WHERE {\n  <RESOURCE_URI> ext:plaatscoordinaten ?geom .\n  ?geom geosparql:asWKT ?wkt .\n} LIMIT 1",
+      "status": "bevestigd werkend 2026-07-05: geo:asWKT geeft 'POINT(lon lat)' in WGS84"
+    },
+    {
+      "naam": "beperkingen_op_grondslagcode_keyset",
+      "doel": "Keyset-gepagineerde opvraging van percelen met een gegeven grondslagcode (omzeilt Virtuoso OFFSET-limiet)",
+      "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nSELECT ?perceel WHERE {\n  ?beperking imxgeo:isBeperkingOpPerceel ?perceel ;\n             imxgeo:grondslagcode \"EWE\" .\n  FILTER(STR(?perceel) > \"<vorige_cursor_uri>\")\n} ORDER BY STR(?perceel) LIMIT 5000",
+      "status": "bevestigd werkend 2026-07-04, gebruikt om >10.000 percelen op te halen zonder OFFSET"
     }
   ],
   "bekende_valkuilen": [
@@ -130,6 +178,23 @@
     {
       "probleem": "Root van api.labs.kadaster.nl geeft 404",
       "advies": "Alleen het SPARQL-pad zelf gebruiken voor health-checks, niet de domeinroot."
+    },
+    {
+      "probleem": "GET met grote VALUES-clause (>~500 URI's) geeft HTTP 431",
+      "voorbeeld": "VALUES ?bar { <uri1> <uri2> ... <uri500+> } via GET faalde consistent vanaf querystring-lengte >~40KB (bevestigd 2026-07-05)",
+      "advies": "Gebruik altijd POST voor SPARQL-requests, niet alleen als 'fallback bij grote queries'. Voorkomt dit issue volledig, ook getest tot 3000 URI's/255KB zonder problemen."
+    },
+    {
+      "probleem": "ORDER BY + OFFSET > 10.000 faalt hard (Virtuoso-limiet)",
+      "advies": "Zie sectie 'paginering' hierboven -- gebruik keyset-paginering met STR() voor alles wat potentieel > 10.000 resultaten kan opleveren."
+    },
+    {
+      "probleem": "Datatype-mismatch tussen RCE (ongetypeerd string) en KKG (xsd:integer) voor semantisch vergelijkbare velden als perceelnummer",
+      "advies": "Bij het bouwen van cross-endpoint queries (of een MCP-tool die dat faciliteert) altijd het datatype van beide kanten los verifieren met een kleine testquery, niet aannemen dat gelijke betekenis ook gelijke representatie betekent."
+    },
+    {
+      "probleem": "imxgeo:naam via imxgeo:ligtInRegistratieveRuimte zonder class-restrictie kan de verkeerde 'plaats' opleveren",
+      "advies": "Een perceel ligt via imxgeo:ligtInRegistratieveRuimte zowel in een imxgeo:Gemeentegebied als een imxgeo:Buurt en imxgeo:Woonplaats. Voeg altijd '?plaats a imxgeo:Gemeentegebied' toe als je de gemeentenaam bedoelt."
     }
   ],
   "voorgestelde_mcp_tools": [
@@ -164,7 +229,30 @@
   "gerelateerde_bestanden_lokaal": {
     "build_csv_landelijk.py": "Bestaand Python-script (niet MCP) dat dit KKG-endpoint al bevraagt voor een landelijke vergelijking rijksmonumenten vs BRK-PB-beperkingen. Kan als referentie dienen voor querypatronen, maar is losstaand van de MCP en hoeft niet aangepast te worden."
   },
+  "datatype_waarschuwingen": [
+    {
+      "predicaat": "ext:perceelnummer",
+      "datatype": "xsd:integer (WEL getypeerd in KKG)",
+      "voorbeeld": "\"370\"^^xsd:integer",
+      "waarschuwing": "Let op: dit is INCONSISTENT met hoe RCE hetzelfde soort gegeven (ceo:perceelnummer) modelleert -- daar is het een ongetypeerd string-literal. Bij cross-endpoint vergelijkingen (RCE <-> KKG) dus altijd even het datatype van beide kanten checken, anders matcht een FILTER of VALUES-clause stilzwijgend niets."
+    },
+    {
+      "predicaat": "imxgeo:huisnummer (op imxgeo:Adres)",
+      "datatype": "vermoedelijk ook xsd:integer o.b.v. gebruikspatroon in productiescript, niet apart bevestigd in deze sessie -- aanrader: verifieren voordat een MCP-tool hier blind op filtert."
+    }
+  ],
+  "paginering": {
+    "probleem": "Virtuoso (de triplestore achter KKG) weigert ORDER BY + OFFSET zodra LIMIT+OFFSET > 10.000: 'Sorted TOP clause specifies more than 15000 rows to sort. Only 10000 are allowed.' Bevestigd 2026-07-04 bij het ophalen van >10.000 percelen met een grondslagcode-filter.",
+    "oplossing": "Keyset-paginering i.p.v. OFFSET: sorteer op STR(?resource) (NIET op ?resource zelf -- IRI-vergelijking met '>' bleek geen consistente lexicografische volgorde te geven, wat tot overlap tussen 'pagina's' leidde) en gebruik FILTER(STR(?resource) > \"<laatst-geziene-uri>\") i.p.v. OFFSET.",
+    "voorbeeld_query": "SELECT ?perceel WHERE {\n  ?beperking imxgeo:isBeperkingOpPerceel ?perceel ;\n             imxgeo:grondslagcode \"EWE\" .\n  FILTER(STR(?perceel) > \"<vorige_cursor_uri>\")\n} ORDER BY STR(?perceel) LIMIT 5000",
+    "advies_voor_mcp": "Een eventuele 'query_sparql_paginated'-tool zou dit keyset-patroon automatisch moeten toepassen zodra een resultset > 10.000 rijen dreigt te worden, i.p.v. de gebruiker een handmatige OFFSET te laten opgeven die boven de grens uitkomt."
+  },
+  "geen_perceel_geschiedenis": {
+    "bevinding": "KKG bevat GEEN expliciete opvolgingsrelatie tussen een vervallen/hernummerd perceel en zijn opvolger. Uitgebreid gezocht (2026-07-05) naar o.a. isVervangenDoor, vervangtPerceel, opgegaanIn, ontstaanUit, geldigheid, opgevolgdDoor -- geen van allen bestaat (bevestigd via ASK, allen False).",
+    "consequentie": "Als een RCE-geregistreerde kadastrale aanduiding niet meer bestaat of niet meer overeenkomt met de huidige Kadaster-registratie, kan dit NIET automatisch herleid worden naar de actuele opvolger via SPARQL.",
+    "workaround": "Geometrische proximiteitscheck via ext:plaatscoordinaten (WKT POINT in WGS84 lon/lat, via geo:asWKT op het gekoppelde plaatscoordinaten-object). Als een 'oude' aanduiding nog wel als apart Perceel bestaat, vergelijk de coordinaten met het adres-gematchte perceel: <50m = vrijwel zeker hetzelfde kavel/complex (bv. monument beslaat meerdere aangrenzende percelen), 50m-1km = twijfelgeval, >1km = vrijwel zeker een fout in de bron-registratie. Gevalideerd in een steekproef van 80 monumenten (2026-07-05): gaf duidelijk onderscheid tussen onschuldige multi-perceel-situaties en drie evidente fouten (8-10km afwijking)."
+  },
   "mcp_build_meta": {
-    "verificatiepoging_door_claude_code": "Bij het bouwen van deze MCP is geprobeerd imxgeo:bevindtZichOpPerceel en imxgeo:naam (op registratieve-ruimte) live te verifieren tegen het KKG-endpoint via curl. Dit werd geblokkeerd door het sandbox-netwerkbeleid (403 policy denial op CONNECT naar api.labs.kadaster.nl). Beide predicaten zijn daarom in de MCP als status 'unverified' gemarkeerd; tools die ze gebruiken (plan_question/build_query voor adres_naar_perceel en kadastrale_aanduiding_naar_perceel) geven hier expliciet een waarschuwing bij."
+    "verificatiepoging_door_claude_code": "Bij het bouwen van deze MCP is geprobeerd imxgeo:bevindtZichOpPerceel live te verifieren tegen het KKG-endpoint via curl. Dit werd geblokkeerd door het sandbox-netwerkbeleid (403 policy denial op CONNECT naar api.labs.kadaster.nl). Dit predicaat is daarom nog steeds als 'unverified' gemarkeerd; tools die het gebruiken (plan_question/build_query voor adres_naar_perceel) geven hier expliciet een waarschuwing bij. imxgeo:naam is per de update van 2026-07-05 wel bevestigd (specifiek op imxgeo:Gemeentegebied) en is uit de unverified-lijst gehaald; de bijbehorende class-restrictie wordt nu wel afgedwongen in de query-template en door de validator gecontroleerd."
   }
 }

@@ -55,6 +55,13 @@ _INTENTS: list[dict[str, Any]] = [
         "properties": [],
         "required_params": [],
     },
+    {
+        "template": "resource_coordinaten",
+        "keywords": ["coordinaat", "coördinaat", "locatie", "waar ligt", "kaart", "lon", "lat", "wgs84"],
+        "classes": ["geosparql:Geometry"],
+        "properties": ["ext:plaatscoordinaten", "geosparql:asWKT"],
+        "required_params": ["resource_uri"],
+    },
 ]
 
 
@@ -74,7 +81,9 @@ def _extract_params(question: str) -> dict[str, Any]:
     if m := _PERCEELNUMMER_RE.search(question):
         params["perceelnummer"] = int(m.group(1))
     if m := _URI_RE.search(question):
-        params["perceel_uri"] = m.group(0)
+        uri = m.group(0)
+        params["perceel_uri"] = uri
+        params["resource_uri"] = uri
     return params
 
 

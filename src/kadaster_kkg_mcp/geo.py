@@ -9,6 +9,9 @@ zelf getranscribeerde benaderingsformule.
 
 from __future__ import annotations
 
+import re
+from math import asin, cos, radians, sin, sqrt
+
 from pyproj import Transformer
 
 _TO_WGS84 = Transformer.from_crs("EPSG:28992", "EPSG:4326", always_xy=True)
@@ -38,3 +41,48 @@ def convert_wgs84_to_rd(lon: float, lat: float) -> dict[str, float]:
     """Converteert WGS84 (lon, lat) naar RD (EPSG:28992) x/y."""
     x, y = _TO_RD.transform(lon, lat)
     return {"x": round(x, 3), "y": round(y, 3)}
+
+
+_WKT_POINT_RE = re.compile(r"POINT\s*\(\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s*\)", re.IGNORECASE)
+
+_EARTH_RADIUS_M = 6_371_000.0
+
+# Drempels uit de "geen_perceel_geschiedenis"-workaround (zie kkg_spec.json),
+# gevalideerd tegen een steekproef van 80 monumenten (2026-07-05).
+_SAME_PARCEL_THRESHOLD_M = 50.0
+_AMBIGUOUS_THRESHOLD_M = 1000.0
+
+
+class WktParseError(ValueError):
+    pass
+
+
+def parse_wkt_point(wkt: str) -> dict[str, float]:
+    """Parseert 'POINT(lon lat)' (WGS84, zoals geosparql:asWKT teruggeeft
+    voor ext:plaatscoordinaten in de KKG) naar {lon, lat}."""
+    match = _WKT_POINT_RE.search(wkt)
+    if not match:
+        raise WktParseError(f"Kon geen POINT(lon lat) parsen uit WKT: {wkt!r}")
+    return {"lon": float(match.group(1)), "lat": float(match.group(2))}
+
+
+def haversine_distance_meters(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """Afstand in meters tussen twee WGS84-punten (haversine, geen ellipsoide-correctie
+    nodig voor de hier gebruikte drempels van 50m/1km)."""
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * asin(sqrt(a))
+
+
+def classify_proximity(meters: float) -> str:
+    """Classificeert een afstand volgens de perceel-geschiedenis-workaround:
+    KKG kent geen expliciete opvolgingsrelatie tussen percelen, dus geometrische
+    nabijheid is het enige aanknopingspunt om een 'oude' aanduiding aan een
+    huidig perceel te koppelen."""
+    if meters < _SAME_PARCEL_THRESHOLD_M:
+        return "vrijwel zeker hetzelfde kavel/complex"
+    if meters <= _AMBIGUOUS_THRESHOLD_M:
+        return "twijfelgeval"
+    return "vrijwel zeker een fout in de bron-registratie"

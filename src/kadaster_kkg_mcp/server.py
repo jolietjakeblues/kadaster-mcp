@@ -17,14 +17,20 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from . import ontology, query_builder
-from .geo import RdBoundsError
+from .geo import RdBoundsError, WktParseError
+from .geo import classify_proximity as _classify_proximity
 from .geo import convert_rd_to_wgs84 as _convert_rd_to_wgs84
 from .geo import convert_wgs84_to_rd as _convert_wgs84_to_rd
+from .geo import haversine_distance_meters as _haversine_distance_meters
+from .geo import parse_wkt_point as _parse_wkt_point
 from .planner import plan_question as _plan_question
 from .query_builder import QueryBuildError
 from .sparql_client import SparqlClient, SparqlClientError, format_bindings_as_table
 from .spec_data import endpoint_info, recommended_settings, sample_results
+from .spec_data import datatype_warnings as _datatype_warnings
 from .spec_data import known_pitfalls as _known_pitfalls
+from .spec_data import pagination_info as _pagination_info
+from .spec_data import perceel_geschiedenis_info as _perceel_geschiedenis_info
 from .validator import validate_query as _validate_query
 
 mcp = FastMCP("kadaster-kkg-mcp")
@@ -129,8 +135,9 @@ def build_query(template_name: str, params: dict[str, Any] | None = None) -> dic
 def validate_query(sparql: str) -> dict[str, Any]:
     """Valideert een SPARQL-query syntactisch (zonder uit te voeren) en waarschuwt
     voor bekende valkuilen: brede CONTAINS-scans (timeout-risico), ontbrekende LIMIT,
-    ASK- vs SELECT-resultaatvorm, en gebruik van nog niet los geverifieerde predicaten
-    (imxgeo:bevindtZichOpPerceel, imxgeo:naam op registratieve-ruimte).
+    LIMIT+OFFSET > 10.000 (Virtuoso-limiet), ASK- vs SELECT-resultaatvorm, gebruik
+    van imxgeo:bevindtZichOpPerceel (nog niet los geverifieerd) en gebruik van
+    imxgeo:naam zonder de vereiste class-restrictie ('a imxgeo:Gemeentegebied').
     """
     return _validate_query(sparql).to_dict()
 
@@ -177,6 +184,94 @@ def convert_rd_to_wgs84(x: float, y: float) -> dict[str, Any]:
 def convert_wgs84_to_rd(lon: float, lat: float) -> dict[str, Any]:
     """Converteert WGS84 lon/lat naar een RD-coordinaat (EPSG:28992)."""
     return _convert_wgs84_to_rd(lon, lat)
+
+
+@mcp.tool()
+def build_paginated_query(
+    select_vars: str,
+    where_clause: str,
+    order_var: str,
+    cursor: str | None = None,
+    limit: int = 5000,
+) -> dict[str, Any]:
+    """Bouwt een SELECT met keyset-paginering (omzeilt Virtuoso's harde limiet van
+    LIMIT+OFFSET > 10.000). Sorteert op STR(order_var) i.p.v. de IRI zelf.
+
+    Roep dit herhaald aan: geef bij de eerste pagina geen cursor mee, en gebruik
+    daarna de laatst geziene waarde van order_var uit de vorige pagina als cursor.
+
+    Args:
+        select_vars: bv. '?perceel'.
+        where_clause: de WHERE-body zonder buitenste accolades, bv.
+            '?beperking imxgeo:isBeperkingOpPerceel ?perceel ; imxgeo:grondslagcode "EWE" .'.
+        order_var: variabele om op te pagineren, bv. '?perceel' (met vraagteken).
+        cursor: laatst geziene waarde van order_var uit de vorige pagina, of None voor pagina 1.
+    """
+    try:
+        sparql = query_builder.build_paginated_query(select_vars, where_clause, order_var, cursor, limit)
+    except QueryBuildError as exc:
+        return {"error": str(exc)}
+    return {"sparql": sparql}
+
+
+@mcp.tool()
+def get_coordinates(resource_uri: str) -> dict[str, Any]:
+    """Haalt het WGS84-punt (lon/lat) op van een perceel/adres via
+    ext:plaatscoordinaten -> geosparql:asWKT en parseert de WKT-string.
+    """
+    try:
+        sparql = query_builder.build_resource_coordinaten(resource_uri)
+    except QueryBuildError as exc:
+        return {"error": str(exc)}
+    try:
+        result = _client.query(sparql)
+    except SparqlClientError as exc:
+        return {"error": str(exc)}
+    bindings = result.bindings
+    if not bindings:
+        return {"error": f"Geen coordinaten gevonden voor {resource_uri}."}
+    wkt = bindings[0]["wkt"]["value"]
+    try:
+        return _parse_wkt_point(wkt)
+    except WktParseError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+def compare_locations(lon1: float, lat1: float, lon2: float, lat2: float) -> dict[str, Any]:
+    """Vergelijkt twee WGS84-punten op afstand en classificeert die volgens de
+    perceel-geschiedenis-workaround (KKG kent geen expliciete opvolgingsrelatie
+    tussen percelen -- zie perceel_geschiedenis_workaround): <50m vrijwel zeker
+    hetzelfde kavel/complex, 50m-1km twijfelgeval, >1km vrijwel zeker een fout
+    in de bron-registratie.
+    """
+    meters = _haversine_distance_meters(lon1, lat1, lon2, lat2)
+    return {"afstand_meters": round(meters, 1), "classificatie": _classify_proximity(meters)}
+
+
+@mcp.tool()
+def datatype_warnings() -> list[dict[str, Any]]:
+    """Bekende datatype-verschillen tussen KKG en RCE voor semantisch vergelijkbare
+    velden (bv. ext:perceelnummer is xsd:integer in KKG, ongetypeerd string in RCE) --
+    belangrijk bij het bouwen van cross-endpoint vergelijkingen."""
+    return _datatype_warnings()
+
+
+@mcp.tool()
+def pagination_help() -> dict[str, Any]:
+    """Uitleg van de Virtuoso OFFSET-limiet (LIMIT+OFFSET > 10.000 faalt) en de
+    keyset-paginering-oplossing. Gebruik build_paginated_query om dit patroon
+    automatisch toe te passen."""
+    return _pagination_info()
+
+
+@mcp.tool()
+def perceel_geschiedenis_workaround() -> dict[str, Any]:
+    """Documenteert dat KKG geen expliciete opvolgingsrelatie tussen vervallen/
+    hernummerde percelen kent, en de geometrische-proximiteit-workaround
+    (zie get_coordinates + compare_locations) om een oude aanduiding toch aan
+    een huidig perceel te koppelen."""
+    return _perceel_geschiedenis_info()
 
 
 def main() -> None:

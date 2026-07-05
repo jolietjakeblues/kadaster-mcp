@@ -19,12 +19,14 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_RDFLIB = False
 
-from .spec_data import UNVERIFIED_PREDICATES, namespaces
+from .spec_data import CLASS_RESTRICTED_PREDICATES, UNVERIFIED_PREDICATES, namespaces
 
 _CONTAINS_RE = re.compile(r"FILTER\s*\(\s*CONTAINS\s*\(", re.IGNORECASE)
 _TYPE_PATTERN_RE = re.compile(r"\?\w+\s+a\s+\?\w+", re.IGNORECASE)
-_LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
+_LIMIT_RE = re.compile(r"\bLIMIT\s+(\d+)", re.IGNORECASE)
+_OFFSET_RE = re.compile(r"\bOFFSET\s+(\d+)", re.IGNORECASE)
 _SELECT_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
+_MAX_LIMIT_PLUS_OFFSET = 10_000
 
 
 @dataclass
@@ -98,6 +100,17 @@ def validate_query(sparql: str) -> ValidationResult:
             "zware, trage queries op de volledige graph te voorkomen."
         )
 
+    # --- Virtuoso-limiet: ORDER BY + OFFSET > 10.000 faalt hard ---
+    offset_match = _OFFSET_RE.search(sparql)
+    limit_match = _LIMIT_RE.search(sparql)
+    if offset_match and int(offset_match.group(1)) + (int(limit_match.group(1)) if limit_match else 0) > _MAX_LIMIT_PLUS_OFFSET:
+        result.warnings.append(
+            "LIMIT + OFFSET > 10.000: Virtuoso (de triplestore achter KKG) weigert dit "
+            "('Sorted TOP clause specifies more than 15000 rows to sort'). Gebruik "
+            "keyset-paginering (FILTER(STR(?var) > \"<cursor>\") + ORDER BY STR(?var)) "
+            "i.p.v. OFFSET -- zie build_paginated_query."
+        )
+
     # --- Gebruik van nog niet los geverifieerde predicaten ---
     for predicate, note in UNVERIFIED_PREDICATES.items():
         local_name = predicate.split(":")[-1]
@@ -105,6 +118,16 @@ def validate_query(sparql: str) -> ValidationResult:
             result.warnings.append(
                 f"Query gebruikt '{predicate}', dat nog niet los tegen het live endpoint "
                 f"is geverifieerd. {note} Controleer het resultaat extra kritisch."
+            )
+
+    # --- Class-gerestricteerde predicaten zonder de vereiste class-restrictie ---
+    for predicate, info in CLASS_RESTRICTED_PREDICATES.items():
+        local_name = predicate.split(":")[-1]
+        used = predicate in sparql or re.search(rf"[:#]{re.escape(local_name)}\b", sparql)
+        if used and info["vereiste_class"] not in sparql:
+            result.warnings.append(
+                f"Query gebruikt '{predicate}' zonder de vereiste class-restrictie "
+                f"'{info['vereiste_class']}'. {info['toelichting']}"
             )
 
     return result
