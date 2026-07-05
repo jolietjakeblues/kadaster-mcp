@@ -1,9 +1,12 @@
 """HTTP-client voor het KKG SPARQL-endpoint.
 
-Volgt de bevestigde aanroepwijze uit de spec: GET met query-param 'query'
-en header Accept: application/sparql-results+json. Retry/backoff en
-rate-limiting-instellingen komen uit config.settings (overgenomen uit het
-bestaande productiescript build_csv_landelijk.py, zie kkg_spec.json).
+Volgt de bevestigde aanroepwijze uit de spec: POST met form-data key 'query'
+en header Accept: application/sparql-results+json. GET is bewust NIET
+gebruikt: bij VALUES-clauses met >~300-500 URI's (querystring >~30-40KB)
+geeft GET een HTTP 431 'Request Header Fields Too Large' (bevestigd
+2026-07-05); POST is getest tot 3000 URI's/255KB zonder problemen. Retry/
+backoff en rate-limiting-instellingen komen uit config.settings (overgenomen
+uit het bestaande productiescript build_csv_landelijk.py, zie kkg_spec.json).
 """
 
 from __future__ import annotations
@@ -86,9 +89,9 @@ class SparqlClient:
             start = time.monotonic()
             try:
                 with httpx.Client(timeout=self.timeout) as client:
-                    response = client.get(
+                    response = client.post(
                         self.endpoint,
-                        params={"query": sparql},
+                        data={"query": sparql},
                         headers={
                             "Accept": "application/sparql-results+json",
                             "User-Agent": settings.user_agent,

@@ -19,15 +19,29 @@ _SPEC_PATH = Path(__file__).parent / "data" / "kkg_spec.json"
 # Zie mcp_build_meta in kkg_spec.json: ook Claude Code kon dit niet alsnog
 # bevestigen omdat het sandbox-netwerkbeleid uitgaand verkeer naar
 # api.labs.kadaster.nl blokkeerde.
+#
+# imxgeo:naam is sinds de update van 2026-07-05 wel bevestigd (specifiek op
+# imxgeo:Gemeentegebied) en staat daarom niet meer in deze lijst -- zie
+# CLASS_RESTRICTED_PREDICATES voor de voorwaarde waaronder die bevestiging geldt.
 UNVERIFIED_PREDICATES = {
     "imxgeo:bevindtZichOpPerceel": (
         "Gebruikt in template 'adres_naar_perceel' (gebouw -> perceel). "
         "Nog niet los getest tegen het live endpoint."
     ),
-    "imxgeo:naam": (
-        "Gebruikt in template 'kadastrale_aanduiding_naar_perceel' op de "
-        "registratieve-ruimte (plaats). Nog niet los getest tegen het live endpoint."
-    ),
+}
+
+# Predicaten die alleen bevestigd zijn op een specifieke class, en dus een
+# class-restrictie in de query vereisen om betrouwbaar te zijn.
+CLASS_RESTRICTED_PREDICATES = {
+    "imxgeo:naam": {
+        "vereiste_class": "imxgeo:Gemeentegebied",
+        "toelichting": (
+            "imxgeo:naam is bevestigd als de leesbare gemeentenaam op imxgeo:Gemeentegebied. "
+            "Een perceel ligt via imxgeo:ligtInRegistratieveRuimte ook in imxgeo:Buurt en "
+            "imxgeo:Woonplaats -- zonder de restrictie '?plaats a imxgeo:Gemeentegebied' kan "
+            "de query de verkeerde 'plaats' (buurt- of woonplaatsnaam i.p.v. gemeentenaam) opleveren."
+        ),
+    },
 }
 
 
@@ -74,6 +88,18 @@ def endpoint_info() -> dict[str, Any]:
 
 def sample_results() -> dict[str, Any]:
     return dict(load_spec()["voorbeeld_resultaten_ter_referentie"])
+
+
+def datatype_warnings() -> list[dict[str, Any]]:
+    return list(load_spec()["datatype_waarschuwingen"])
+
+
+def pagination_info() -> dict[str, Any]:
+    return dict(load_spec()["paginering"])
+
+
+def perceel_geschiedenis_info() -> dict[str, Any]:
+    return dict(load_spec()["geen_perceel_geschiedenis"])
 
 
 def prefix_header(prefixes: list[str] | None = None) -> str:
