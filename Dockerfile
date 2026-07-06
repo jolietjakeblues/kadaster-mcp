@@ -13,4 +13,4 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 EXPOSE 8000
 
-CMD ["python", "-m", "kadaster_mcp.http_server"]
+CMD ["python", "-m", "kadaster_kkg_mcp.http_server"]
