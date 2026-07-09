@@ -12,6 +12,12 @@ def main() -> None:
     mcp.settings.stateless_http = True
     mcp.settings.json_response = True
 
+    mcp.settings.hosts = [
+        "kadaster-mcp.onrender.com",
+        "localhost",
+        "127.0.0.1",
+    ]
+
     mcp.run(transport="streamable-http")
 
 
