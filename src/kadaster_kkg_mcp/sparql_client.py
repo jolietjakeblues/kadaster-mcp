@@ -44,7 +44,7 @@ class SparqlResult:
 
 
 class SparqlClient:
-    """Kleine, robuuste client voor het KKG-endpoint (GET-only, JSON-resultaten)."""
+    """Kleine, robuuste client voor het KKG-endpoint (POST-only, JSON-resultaten)."""
 
     def __init__(
         self,

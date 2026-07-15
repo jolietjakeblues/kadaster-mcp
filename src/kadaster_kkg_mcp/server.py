@@ -24,6 +24,7 @@ from .geo import convert_wgs84_to_rd as _convert_wgs84_to_rd
 from .geo import haversine_distance_meters as _haversine_distance_meters
 from .geo import parse_wkt_point as _parse_wkt_point
 from .planner import plan_question as _plan_question
+from .prompts import WORKFLOW_INSTRUCTIONS
 from .query_builder import QueryBuildError
 from .sparql_client import SparqlClient, SparqlClientError, format_bindings_as_table
 from .spec_data import endpoint_info, recommended_settings, sample_results
@@ -33,7 +34,7 @@ from .spec_data import pagination_info as _pagination_info
 from .spec_data import perceel_geschiedenis_info as _perceel_geschiedenis_info
 from .validator import validate_query as _validate_query
 
-mcp = FastMCP("kadaster-kkg-mcp")
+mcp = FastMCP("kadaster-kkg-mcp", instructions=WORKFLOW_INSTRUCTIONS)
 _client = SparqlClient()
 
 
@@ -62,14 +63,21 @@ def list_namespaces() -> dict[str, str]:
 
 @mcp.tool()
 def list_confirmed_classes() -> list[dict[str, Any]]:
-    """Geeft de lijst van classes die tegen het live KKG-endpoint bevestigd zijn,
-    inclusief geschatte aantallen instances (bv. imxgeo:Perceel, imxgeo:Adres, imxgeo:Gebouw)."""
+    """Geeft een totaaloverzicht van classes die tegen het live KKG-endpoint
+    bevestigd zijn, inclusief geschatte aantallen instances (bv. imxgeo:Perceel,
+    imxgeo:Adres, imxgeo:Gebouw). Start hier voor een overzicht; gebruik
+    ontology_search() als je een specifieke class/property op trefwoord zoekt,
+    of describe_class() zodra je de class-naam al kent."""
     return ontology.list_confirmed_classes()
 
 
 @mcp.tool()
 def describe_class(class_name: str) -> dict[str, Any]:
     """Beschrijft een bevestigde class: geschat aantal instances en bekende properties.
+
+    Gebruik dit zodra je de class-naam kent; gebruik ontology_search() als je
+    nog op trefwoord moet zoeken, of list_confirmed_classes() voor een
+    totaaloverzicht.
 
     Args:
         class_name: class-naam met of zonder prefix, bv. 'imxgeo:Perceel' of 'Perceel'.
@@ -82,7 +90,10 @@ def ontology_search(keyword: str) -> dict[str, Any]:
     """Doorzoekt bevestigde classes, properties en namespaces op een trefwoord.
 
     Gebruik dit voordat je een SPARQL-query schrijft om te bepalen welke
-    class/property-namen daadwerkelijk bestaan in de KKG.
+    class/property-namen daadwerkelijk bestaan in de KKG -- vooral handig als
+    je de exacte naam nog niet kent. Ken je de naam al, gebruik dan
+    describe_class() direct; wil je een totaaloverzicht, gebruik
+    list_confirmed_classes().
     """
     return ontology.ontology_search(keyword)
 
@@ -90,14 +101,27 @@ def ontology_search(keyword: str) -> dict[str, Any]:
 @mcp.tool()
 def known_pitfalls() -> list[dict[str, Any]]:
     """Geeft de bekende valkuilen bij het bevragen van het KKG-endpoint,
-    zoals timeouts bij brede FILTER(CONTAINS(...))-scans."""
+    zoals timeouts bij brede FILTER(CONTAINS(...))-scans.
+
+    Let op: dit is achtergrondinformatie op queryconstructieniveau. De
+    meeste van deze valkuilen worden al automatisch gemeld door
+    validate_query(); sommige (zoals GET vs POST bij grote VALUES-clauses)
+    zijn al intern afgevangen door query_sparql() zelf en vragen geen actie
+    van jou als tool-gebruiker.
+    """
     return _known_pitfalls()
 
 
 @mcp.tool()
 def sample_results_reference() -> dict[str, Any]:
     """Geeft voorbeeldresultaten en URI-patronen (perceel/beperking) ter referentie,
-    zoals eerder daadwerkelijk opgehaald uit het KKG-endpoint."""
+    zoals eerder daadwerkelijk opgehaald uit het KKG-endpoint.
+
+    Gebruik dit om te controleren of een resource_uri het verwachte patroon
+    heeft (https://data.kkg.kadaster.nl/id/perceel/{identificatie}/{versie})
+    voordat je 'm doorgeeft aan get_coordinates(), of om te zien welke velden
+    een typische beperking-op-perceel-resultaat bevat.
+    """
     return sample_results()
 
 
@@ -121,9 +145,17 @@ def build_query(template_name: str, params: dict[str, Any] | None = None) -> dic
     kadastrale_aanduiding_naar_perceel (sectie, perceelnummer, gemeente[, limit]),
     beperking_op_perceel (perceel_uri[, limit]), classes_met_aantallen ([limit]).
 
+    Dit is de standaard template-workflow (stap 2 na plan_question). Voor
+    handgeschreven queries die potentieel meer dan 10.000 resultaten
+    opleveren, gebruik in plaats daarvan build_paginated_query() -- dat is
+    een aparte keyset-paginering-bouwer, geen onderdeel van deze workflow.
+
     Args:
         template_name: naam van de template (zie plan_question voor herkenning).
         params: parameters voor de template, bv. {"postcode": "1234AB", "huisnummer": 10}.
+            Let op bij kadastrale_aanduiding_naar_perceel: sectie is niet per
+            se één letter (bv. "A"), sommige gemeenten gebruiken twee letters
+            (bv. "AD").
     """
     try:
         return query_builder.build_query(template_name, params)
@@ -147,8 +179,11 @@ def query_sparql(sparql: str, max_rows: int = 200) -> str:
     """Stap 3 van de workflow: voert een SPARQL-query uit tegen het KKG-endpoint
     en geeft het resultaat als leesbare tabel terug (of 'ASK-resultaat: true/false').
 
-    Voer bij twijfel eerst validate_query uit. Bij ASK-queries wordt het
-    boolean-resultaat teruggegeven; SELECT-resultaten worden als tabel getoond.
+    Voer altijd eerst validate_query uit, tenzij het een simpele ASK-check is:
+    validate_query is gratis en vangt bekende faalmodi (Virtuoso's
+    OFFSET-limiet, CONTAINS-scan-timeout) af voordat ze optreden. Bij
+    ASK-queries wordt het boolean-resultaat teruggegeven; SELECT-resultaten
+    worden als tabel getoond.
     """
     try:
         result = _client.query(sparql)
@@ -162,6 +197,9 @@ def query_sparql_json(sparql: str) -> dict[str, Any]:
     """Zelfde als query_sparql, maar geeft het ruwe SPARQL-JSON-resultaat terug
     (voor programmatische verwerking / batch-scripts). SELECT-resultaten hebben
     de vorm {head, results.bindings}; ASK-resultaten hebben {head, boolean}.
+
+    Voer ook hier altijd eerst validate_query uit, tenzij het een simpele
+    ASK-check is.
     """
     try:
         result = _client.query(sparql)
@@ -196,6 +234,10 @@ def build_paginated_query(
 ) -> dict[str, Any]:
     """Bouwt een SELECT met keyset-paginering (omzeilt Virtuoso's harde limiet van
     LIMIT+OFFSET > 10.000). Sorteert op STR(order_var) i.p.v. de IRI zelf.
+
+    Geen onderdeel van de plan_question/build_query-templateworkflow (stap 2)
+    -- gebruik dit alleen voor een zelfgeschreven WHERE-clause die potentieel
+    meer dan 10.000 resultaten oplevert.
 
     Roep dit herhaald aan: geef bij de eerste pagina geen cursor mee, en gebruik
     daarna de laatst geziene waarde van order_var uit de vorige pagina als cursor.
