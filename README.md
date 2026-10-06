@@ -33,7 +33,7 @@ altijd de restrictie `?plaats a imxgeo:Gemeentegebied` af -- zie
 
 ## Endpoint
 
-- URL: `https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql`
+- URL: `https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql`
 - Methode: **POST** met form-data key `query`, header `Accept: application/sparql-results+json`.
   GET is bewust niet gebruikt: bij grote `VALUES`-clauses (querystring >~30-40KB, >~300-500 URI's)
   geeft GET een HTTP 431 "Request Header Fields Too Large" (bevestigd 2026-07-05).

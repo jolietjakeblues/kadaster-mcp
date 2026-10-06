@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-DEFAULT_ENDPOINT = "https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql"
+DEFAULT_ENDPOINT = "https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql"
 
 
 @dataclass(frozen=True)

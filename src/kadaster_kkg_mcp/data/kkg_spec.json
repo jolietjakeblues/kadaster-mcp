@@ -7,7 +7,7 @@
     "laatst_bijgewerkt": "2026-07-05, na afronding landelijke vergelijking rijksmonumentenregister vs BRK-PB (build_csv_landelijk.py) en een proef voor het percelenvergelijk (vraag 2 van Ashok)."
   },
   "endpoint": {
-    "sparql_endpoint": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql",
+    "sparql_endpoint": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql",
     "methode": "POST met form-data key 'query', header Accept: application/sparql-results+json. GET WERKT NIET BETROUWBAAR: bij VALUES-clauses met >~300-500 URI's (querystring >~30-40KB) geeft GET een HTTP 431 'Request Header Fields Too Large' (bevestigd 2026-07-05, getest tot 3000 URI's/255KB met POST zonder problemen).",
     "status": "Bevestigd bereikbaar en werkend vanuit sandbox op 2026-07-03 (ASK {?s ?p ?o} -> true)",
     "opmerking": "Root van api.labs.kadaster.nl geeft 404 (verwacht, geen API-docs-pagina op root). Alleen het specifieke SPARQL-pad is relevant."
@@ -214,7 +214,7 @@
     },
     {
       "probleem": "Cross-endpoint SPARQL SERVICE-federatie met het RCE CHO-endpoint werkt voor eenvoudige lookups, maar niet betrouwbaar zodra een buiten de SERVICE-clause gebonden variabele in een spatial FILTER bínnen de SERVICE-clause wordt gebruikt",
-      "voorbeeld": "Vanuit RCE query: SERVICE <https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql> { ?per geosparql:hasGeometry/geosparql:asWKT ?perwkt . FILTER(geof:sfIntersects(?perwkt, ?rmwkt)) } waarbij ?rmwkt buiten de SERVICE-clause aan een RCE-polygoon gebonden is -- gaf 0 resultaten, terwijl exact dezelfde spatial-filterlogica met de RCE-WKT als letterlijke string (i.p.v. een van buiten doorgegeven variabele) wel de verwachte percelen opleverde (bevestigd 2026-09-03). Losstaande SERVICE-lookups zonder deze combinatie (bv. gewoon ?s ?p ?o op een bekende URI via SERVICE naar het andere endpoint) werkten in beide richtingen (RCE->KKG en KKG->RCE) wel probleemloos.",
+      "voorbeeld": "Vanuit RCE query: SERVICE <https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql> { ?per geosparql:hasGeometry/geosparql:asWKT ?perwkt . FILTER(geof:sfIntersects(?perwkt, ?rmwkt)) } waarbij ?rmwkt buiten de SERVICE-clause aan een RCE-polygoon gebonden is -- gaf 0 resultaten, terwijl exact dezelfde spatial-filterlogica met de RCE-WKT als letterlijke string (i.p.v. een van buiten doorgegeven variabele) wel de verwachte percelen opleverde (bevestigd 2026-09-03). Losstaande SERVICE-lookups zonder deze combinatie (bv. gewoon ?s ?p ?o op een bekende URI via SERVICE naar het andere endpoint) werkten in beide richtingen (RCE->KKG en KKG->RCE) wel probleemloos.",
       "advies": "Vertrouw voor een spatial join tussen RCE- en KKG-geometrie niet op een federated SERVICE-query in een enkele aanroep. Gebruik in plaats daarvan twee losse queries: haal eerst de WKT van de ene kant op, plak die als een letterlijke geosparql:wktLiteral-string in een tweede query tegen het andere endpoint (met de niet-ruimtelijke gemeente-voorfilter, zie de sfIntersects-timeout-valkuil hierboven). Zie rce-cho-mcp's percelen_via_spatial_join() voor een werkende implementatie van dit patroon."
     }
   ],

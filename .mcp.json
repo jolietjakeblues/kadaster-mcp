@@ -4,7 +4,7 @@
       "command": "python",
       "args": ["-m", "kadaster_kkg_mcp.server"],
       "env": {
-        "KKG_SPARQL_ENDPOINT": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/services/kkg/sparql"
+        "KKG_SPARQL_ENDPOINT": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql"
       }
     }
   }
