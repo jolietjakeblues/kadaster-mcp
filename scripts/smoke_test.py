@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Handmatige smoke test tegen het live KKG-endpoint.
 
-Draai dit vanaf een omgeving die api.labs.kadaster.nl kan bereiken
-(de bouw-sandbox kon dit niet -- netwerkbeleid blokkeerde de host):
-
     python scripts/smoke_test.py
 
-Voert de bevestigde queries uit de spec uit en toont resultaten, plus de
-nog niet los geverifieerde imxgeo:bevindtZichOpPerceel als losse ASK-check.
-(imxgeo:naam is inmiddels bevestigd op imxgeo:Gemeentegebied, 2026-07-05.)
+Voert de bevestigde queries uit de spec uit en toont resultaten. Alle
+eerder "nog niet los geverifieerde" predicaten (imxgeo:naam op
+imxgeo:Gemeentegebied, imxgeo:bevindtZichOpPerceel) zijn inmiddels bevestigd
+(resp. 2026-07-05 en 2026-10-30) en staan hier als regressie-check.
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ def main() -> None:
     print("=== ping ===")
     print(client.ping())
 
-    print("\n=== ASK: imxgeo:bevindtZichOpPerceel bestaat? (nog niet los geverifieerd) ===")
+    print("\n=== ASK: imxgeo:bevindtZichOpPerceel bestaat? (bevestigd 2026-10-30) ===")
     print(
         client.ask(
             "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\n"

@@ -7,7 +7,8 @@ def test_adres_naar_perceel_valid():
     result = build_query("adres_naar_perceel", {"postcode": "1234ab", "huisnummer": "10"})
     assert '"1234AB"' in result["sparql"]
     assert "imxgeo:huisnummer 10" in result["sparql"]
-    assert result["waarschuwingen"]  # bevindtZichOpPerceel is unverified
+    # imxgeo:bevindtZichOpPerceel is bevestigd (2026-10-30); geen waarschuwing meer.
+    assert result["waarschuwingen"] == []
 
 
 def test_adres_naar_perceel_invalid_postcode():

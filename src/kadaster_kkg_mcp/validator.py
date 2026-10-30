@@ -2,9 +2,11 @@
 
 De valkuilen komen direct uit het onderzoeksdocument (kkg_spec.json ->
 bekende_valkuilen): brede FILTER(CONTAINS(...))-scans zonder class-restrictie
-gaven een read-timeout na 30s. Deze validator waarschuwt daarvoor voordat
-een query uitgevoerd wordt, analoog aan hoe rce-cho-mcp waarschuwt voor
-dure geof:sfWithin-patronen.
+gaven een read-timeout na 30s, en ORDER BY op een class-scan-variabele (bv.
+'?per a imxgeo:Perceel') timet uit over grote classes, onafhankelijk van
+OPTIONAL-joins (bevestigd 2026-10-30). Deze validator waarschuwt daarvoor
+voordat een query uitgevoerd wordt, analoog aan hoe rce-cho-mcp waarschuwt
+voor dure geof:sfWithin-patronen.
 """
 
 from __future__ import annotations
@@ -27,6 +29,22 @@ _LIMIT_RE = re.compile(r"\bLIMIT\s+(\d+)", re.IGNORECASE)
 _OFFSET_RE = re.compile(r"\bOFFSET\s+(\d+)", re.IGNORECASE)
 _SELECT_RE = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
 _MAX_LIMIT_PLUS_OFFSET = 10_000
+_ORDER_BY_RE = re.compile(r"\bORDER\s+BY\b", re.IGNORECASE)
+_KEYSET_CURSOR_RE = re.compile(r"FILTER\s*\(\s*STR\s*\(", re.IGNORECASE)
+# ?var a prefix:Klasse -- een class-scan zonder verdere restrictie. Bevestigd
+# (2026-10-30): ORDER BY op zo'n variabele timet uit over de volledige class-
+# extent (getest op imxgeo:Perceel, ~8,4 miljoen instances), ONAFHANKELIJK van
+# OPTIONAL-joins (anders dan het vergelijkbare patroon op het RCE-endpoint) en
+# ook met een op het oog restrictieve FILTER erbij (bv. ext:sectie "A", dat op
+# landelijke schaal nog altijd honderdduizenden percelen omvat). Een vaste
+# subject-URI of een bestaande keyset-cursor (FILTER(STR(?var) > ...)) gaf
+# in dezelfde test wel een snel resultaat.
+_CLASS_SCAN_ORDER_VAR_RE = re.compile(
+    r"\?(\w+)\s+a\s+(?:imxgeo|ext|bag|bgt|nen3610|geosparql):\w+", re.IGNORECASE
+)
+_ORDER_BY_VAR_RE = re.compile(
+    r"ORDER\s+BY\s+(?:DESC|ASC)?\s*\(?\s*(?:STR\s*\(\s*)?\?(\w+)", re.IGNORECASE
+)
 
 
 @dataclass
@@ -110,6 +128,24 @@ def validate_query(sparql: str) -> ValidationResult:
             "keyset-paginering (FILTER(STR(?var) > \"<cursor>\") + ORDER BY STR(?var)) "
             "i.p.v. OFFSET -- zie build_paginated_query."
         )
+
+    # --- Bevestigd (2026-10-30): ORDER BY op een class-scan-variabele timet
+    # uit, onafhankelijk van OPTIONAL en ook met een niet-selectieve FILTER ---
+    if _ORDER_BY_RE.search(sparql) and not _KEYSET_CURSOR_RE.search(sparql):
+        order_by_var_match = _ORDER_BY_VAR_RE.search(sparql)
+        class_scan_vars = {m.group(1) for m in _CLASS_SCAN_ORDER_VAR_RE.finditer(sparql)}
+        if order_by_var_match and order_by_var_match.group(1) in class_scan_vars:
+            result.warnings.append(
+                f"ORDER BY op ?{order_by_var_match.group(1)}, dat alleen via "
+                f"'?{order_by_var_match.group(1)} a <klasse>' gebonden is (een "
+                "class-scan zonder verder selectieve restrictie), timet uit op dit "
+                "endpoint -- bevestigd op imxgeo:Perceel (~8,4 miljoen instances), "
+                "ook mét een extra FILTER als ext:sectie \"A\" (nog steeds te breed "
+                "op landelijke schaal) en onafhankelijk van OPTIONAL-joins. Gebruik "
+                "keyset-paginering (FILTER(STR(?var) > \"<cursor>\") + ORDER BY "
+                "STR(?var), zie build_paginated_query) of beperk eerst tot een vaste "
+                "subject-URI of een echt selectieve combinatie van filters."
+            )
 
     # --- Gebruik van nog niet los geverifieerde predicaten ---
     for predicate, note in UNVERIFIED_PREDICATES.items():

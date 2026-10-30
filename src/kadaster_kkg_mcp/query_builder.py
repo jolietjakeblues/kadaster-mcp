@@ -131,7 +131,7 @@ _BUILDERS: dict[str, Callable[..., str]] = {
 }
 
 _TEMPLATE_UNVERIFIED_PREDICATES: dict[str, list[str]] = {
-    "adres_naar_perceel": ["imxgeo:bevindtZichOpPerceel"],
+    "adres_naar_perceel": [],
     "kadastrale_aanduiding_naar_perceel": [],
     "beperking_op_perceel": [],
     "classes_met_aantallen": [],
@@ -207,10 +207,15 @@ def build_query(template_name: str, params: dict[str, Any] | None = None) -> dic
     except TypeError as exc:
         raise QueryBuildError(f"Ontbrekende of onjuiste parameters voor '{template_name}': {exc}") from exc
     example = example_query_by_name(template_name)
+    # Filter op UNVERIFIED_PREDICATES zelf (niet alleen op de template-lijst):
+    # zodra een predicaat bevestigd wordt en uit UNVERIFIED_PREDICATES
+    # verdwijnt, stopt de waarschuwing ook automatisch, zelfs als iemand
+    # vergeet _TEMPLATE_UNVERIFIED_PREDICATES bij te werken.
     warnings = [
         f"Predicaat '{p}' is nog niet los tegen het live endpoint geverifieerd: "
-        f"{UNVERIFIED_PREDICATES.get(p, '')}"
+        f"{UNVERIFIED_PREDICATES[p]}"
         for p in _TEMPLATE_UNVERIFIED_PREDICATES.get(template_name, [])
+        if p in UNVERIFIED_PREDICATES
     ]
 
     return {

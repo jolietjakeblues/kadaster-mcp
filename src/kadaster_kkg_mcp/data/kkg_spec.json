@@ -9,8 +9,8 @@
   "endpoint": {
     "sparql_endpoint": "https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql",
     "methode": "POST met form-data key 'query', header Accept: application/sparql-results+json. GET WERKT NIET BETROUWBAAR: bij VALUES-clauses met >~300-500 URI's (querystring >~30-40KB) geeft GET een HTTP 431 'Request Header Fields Too Large' (bevestigd 2026-07-05, getest tot 3000 URI's/255KB met POST zonder problemen).",
-    "status": "Bevestigd bereikbaar en werkend vanuit sandbox op 2026-07-03 (ASK {?s ?p ?o} -> true)",
-    "opmerking": "Root van api.labs.kadaster.nl geeft 404 (verwacht, geen API-docs-pagina op root). Alleen het specifieke SPARQL-pad is relevant."
+    "status": "Bevestigd bereikbaar en werkend op 2026-07-03 (ASK {?s ?p ?o} -> true); opnieuw bevestigd op 2026-10-30 via ping() tegen dit exacte pad (https://api.labs.kadaster.nl/datasets/kadaster/kkg/sparql) vanuit de live-draaiende kadaster-kkg-mcp server (reachable: true, boolean: true).",
+    "opmerking": "Root van api.labs.kadaster.nl geeft 404 (verwacht, geen API-docs-pagina op root). Alleen het specifieke SPARQL-pad is relevant. Dit pad bevat geen '/services/kkg/'-segment meer (oudere documentatie/voorbeelden kunnen nog de vorm .../kkg/services/kkg/sparql tonen; dat was een eerdere, inmiddels vervangen variant)."
   },
   "namespaces_gebruikt": {
     "imxgeo": "http://modellen.geostandaarden.nl/def/imx-geo#",
@@ -124,15 +124,30 @@
         "grondslag": "Wet algemene bepalingen omgevingsrecht: Oplegging last onder bestuursdwang en/of dwangsom dat ook geldt voor rechtsopvolgers"
       }
     ],
+    "bevindt_zich_op_perceel_sample": [
+      {
+        "gebouw": "https://data.kkg.kadaster.nl/id/gebouw/G0003.00105e3523504218a43bdb8dc6857469/1",
+        "perceel": "https://data.kkg.kadaster.nl/id/perceel/57920064070000/1"
+      },
+      {
+        "gebouw": "https://data.kkg.kadaster.nl/id/gebouw/G0003.00164ac41fb54f478234c97c4d298384/1",
+        "perceel": "https://data.kkg.kadaster.nl/id/perceel/57970143870000/1"
+      },
+      {
+        "gebouw": "https://data.kkg.kadaster.nl/id/gebouw/G0003.0017321dd66541c6871841e70a96281c/1",
+        "perceel": "https://data.kkg.kadaster.nl/id/perceel/57900085470000/1"
+      }
+    ],
     "uri_patroon_perceel": "https://data.kkg.kadaster.nl/id/perceel/{identificatie}/{versie}",
-    "uri_patroon_beperking": "https://data.kkg.kadaster.nl/id/beperking/{nummer}/{versie}"
+    "uri_patroon_beperking": "https://data.kkg.kadaster.nl/id/beperking/{nummer}/{versie}",
+    "uri_patroon_gebouw": "https://data.kkg.kadaster.nl/id/gebouw/{identificatie}/{versie}"
   },
   "werkende_voorbeeldqueries": [
     {
       "naam": "adres_naar_perceel",
       "doel": "BAG-adres opzoeken en het perceel eronder vinden via gebouw",
       "sparql": "PREFIX imxgeo: <http://modellen.geostandaarden.nl/def/imx-geo#>\nSELECT ?per ?sectie ?perceelnummer WHERE {\n  ?adres a imxgeo:Adres ;\n    imxgeo:postcode \"1234AB\" ;\n    imxgeo:huisnummer 10 ;\n    imxgeo:isAdresVanGebouw ?geb .\n  ?geb imxgeo:bevindtZichOpPerceel ?per .\n  ?per <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#sectie> ?sectie ;\n       <https://modellen.kkg.kadaster.nl/def/imxgeo-ext#perceelnummer> ?perceelnummer .\n} LIMIT 5",
-      "status": "gebruikt in productiescript, nog niet los in deze sessie geverifieerd; imxgeo:bevindtZichOpPerceel zelf niet apart getest"
+      "status": "bevestigd (2026-10-30): imxgeo:bevindtZichOpPerceel getest via ASK (true) en een steekproef van 3 echte gebouw->perceel-koppelingen tegen het live endpoint."
     },
     {
       "naam": "kadastrale_aanduiding_naar_perceel",
@@ -208,6 +223,11 @@
       "advies": "Beperk de kandidatenset altijd eerst niet-ruimtelijk (meestal via imxgeo:ligtInRegistratieveRuimte naar een specifiek imxgeo:Gemeentegebied, met de bekende class-restrictie voor imxgeo:naam) voordat je een spatial FILTER toepast. Analoog aan de geof:sfWithin-timeout op het RCE CHO-endpoint: dit is geen bug in je query maar een structurele beperking van een ongeindexeerde/ongerestricte scan."
     },
     {
+      "probleem": "ORDER BY op een variabele die alleen via een class-scan ('?var a imxgeo:Klasse') gebonden is, timet uit op grote classes -- onafhankelijk van OPTIONAL-joins",
+      "voorbeeld": "SELECT ?per WHERE { ?per a imxgeo:Perceel . } ORDER BY ?per LIMIT 5 -- timeout (bevestigd 2026-10-30), zowel met als zonder een extra OPTIONAL-join, en ook met een niet-selectieve FILTER zoals ext:sectie \"A\" erbij (nog altijd honderdduizenden percelen landelijk). Dezelfde ORDER BY op een vaste subject-URI (bv. binnen beperking_op_perceel voor één specifiek perceel) was wel instant.",
+      "advies": "Sorteer nooit direct op een variabele die alleen via class-lidmaatschap gebonden is. Gebruik keyset-paginering (FILTER(STR(?var) > \"<cursor>\") + ORDER BY STR(?var), zie build_paginated_query/pagination_help) of beperk eerst tot een vaste subject-URI of een combinatie van filters die echt maar een kleine set overlaat. Let op: dit is dus NIET hetzelfde patroon als de 'ORDER BY + OPTIONAL'-504 op het RCE CHO-endpoint -- op KKG is de class-scan zelf al het probleem, met of zonder OPTIONAL."
+    },
+    {
       "probleem": "Virtuoso's eigen bif:-functies (bif:st_intersects, bif:st_area, bif:st_point) zijn niet bruikbaar via dit gehoste SPARQL-endpoint",
       "voorbeeld": "PREFIX bif: <bif:> ASK WHERE { FILTER(bif:st_intersects(bif:st_point(5.86, 52.05), bif:st_point(5.86, 52.05))) } -- gaf consistent HTTP 500 'server error', ook met PREFIX bif: <http://www.openlinksw.com/schemas/bif#> en op een triviale zelf-vergelijking zonder dataopvraging (bevestigd 2026-09-03)",
       "advies": "Gebruik de standaard GeoSPARQL-functies (geof:sfIntersects, geof:sfWithin, geof:sfContains, geof:area met PREFIX geof: <http://www.opengis.net/def/function/geosparql/>) in plaats van bif:st_*. Deze werken wel, ook al is de geometrie zelf van het Virtuoso-eigen datatype virtrdf:Geometry (te zien via DATATYPE(?wkt) op een geosparql:asWKT-waarde) in plaats van het generieke geosparql:wktLiteral."
@@ -274,6 +294,7 @@
     "workaround": "Geometrische proximiteitscheck via ext:plaatscoordinaten (WKT POINT in WGS84 lon/lat, via geo:asWKT op het gekoppelde plaatscoordinaten-object). Als een 'oude' aanduiding nog wel als apart Perceel bestaat, vergelijk de coordinaten met het adres-gematchte perceel: <50m = vrijwel zeker hetzelfde kavel/complex (bv. monument beslaat meerdere aangrenzende percelen), 50m-1km = twijfelgeval, >1km = vrijwel zeker een fout in de bron-registratie. Gevalideerd in een steekproef van 80 monumenten (2026-07-05): gaf duidelijk onderscheid tussen onschuldige multi-perceel-situaties en drie evidente fouten (8-10km afwijking)."
   },
   "mcp_build_meta": {
-    "verificatiepoging_door_claude_code": "Bij het bouwen van deze MCP is geprobeerd imxgeo:bevindtZichOpPerceel live te verifieren tegen het KKG-endpoint via curl. Dit werd geblokkeerd door het sandbox-netwerkbeleid (403 policy denial op CONNECT naar api.labs.kadaster.nl). Dit predicaat is daarom nog steeds als 'unverified' gemarkeerd; tools die het gebruiken (plan_question/build_query voor adres_naar_perceel) geven hier expliciet een waarschuwing bij. imxgeo:naam is per de update van 2026-07-05 wel bevestigd (specifiek op imxgeo:Gemeentegebied) en is uit de unverified-lijst gehaald; de bijbehorende class-restrictie wordt nu wel afgedwongen in de query-template en door de validator gecontroleerd."
+    "verificatiepoging_door_claude_code": "Bij het bouwen van deze MCP is eerst geprobeerd imxgeo:bevindtZichOpPerceel live te verifieren tegen het KKG-endpoint via curl, wat werd geblokkeerd door het sandbox-netwerkbeleid (403 policy denial op CONNECT naar api.labs.kadaster.nl). Op 2026-10-30 is dit alsnog gelukt via de live-draaiende kadaster-kkg-mcp server (ASK -> true, plus een steekproef van 3 echte gebouw->perceel-koppelingen) en is het predicaat uit UNVERIFIED_PREDICATES gehaald. imxgeo:naam is per de update van 2026-07-05 bevestigd (specifiek op imxgeo:Gemeentegebied) en eveneens uit die lijst gehaald; de bijbehorende class-restrictie wordt afgedwongen in de query-template en door de validator gecontroleerd. UNVERIFIED_PREDICATES is nu leeg, maar blijft als mechanisme bestaan voor toekomstige nog-niet-bevestigde predicaten.",
+    "order_by_class_scan_bevinding": "Op 2026-10-30 is ook getest of de bij rce-cho-mcp gevonden 'ORDER BY + OPTIONAL'-504-valkuil een-op-een overdraagbaar is naar de KKG. Dat is NIET het geval: ORDER BY op een variabele die alleen via '?var a imxgeo:Perceel' (class-scan, ~8,4 miljoen instances) gebonden is, timet ook UIT ZONDER OPTIONAL, en zelfs met een extra FILTER als ext:sectie \"A\" (nog altijd honderdduizenden percelen landelijk). Dezelfde ORDER BY op een vaste subject-URI (smalle resultset) is wel snel. De echte valkuil op KKG is dus 'ORDER BY op een class-scan-variabele zonder selectieve restrictie', niet specifiek de combinatie met OPTIONAL zoals bij RCE. validate_query waarschuwt hiervoor."
   }
 }

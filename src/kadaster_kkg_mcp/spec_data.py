@@ -16,19 +16,13 @@ from typing import Any
 _SPEC_PATH = Path(__file__).parent / "data" / "kkg_spec.json"
 
 # Predicaten die het onderzoek expliciet als "nog niet los geverifieerd" markeert.
-# Zie mcp_build_meta in kkg_spec.json: ook Claude Code kon dit niet alsnog
-# bevestigen omdat het sandbox-netwerkbeleid uitgaand verkeer naar
-# api.labs.kadaster.nl blokkeerde.
 #
-# imxgeo:naam is sinds de update van 2026-07-05 wel bevestigd (specifiek op
-# imxgeo:Gemeentegebied) en staat daarom niet meer in deze lijst -- zie
-# CLASS_RESTRICTED_PREDICATES voor de voorwaarde waaronder die bevestiging geldt.
-UNVERIFIED_PREDICATES = {
-    "imxgeo:bevindtZichOpPerceel": (
-        "Gebruikt in template 'adres_naar_perceel' (gebouw -> perceel). "
-        "Nog niet los getest tegen het live endpoint."
-    ),
-}
+# imxgeo:naam (sinds 2026-07-05) en imxgeo:bevindtZichOpPerceel (sinds
+# 2026-10-30) zijn allebei inmiddels bevestigd en staan daarom niet meer in
+# deze lijst -- zie CLASS_RESTRICTED_PREDICATES voor de voorwaarde waaronder
+# de bevestiging van imxgeo:naam geldt. Deze dict is bewust leeg gelaten
+# i.p.v. verwijderd: toekomstige nieuwe/onbevestigde predicaten horen hier.
+UNVERIFIED_PREDICATES: dict[str, str] = {}
 
 # Predicaten die alleen bevestigd zijn op een specifieke class, en dus een
 # class-restrictie in de query vereisen om betrouwbaar te zijn.

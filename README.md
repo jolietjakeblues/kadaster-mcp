@@ -11,25 +11,20 @@ plan_question  ->  build_query  ->  query_sparql / query_sparql_json
 
 Deze server is opgezet op basis van `src/kadaster_kkg_mcp/data/kkg_spec.json`,
 een onderzoeksdocument met tegen het live KKG-endpoint bevestigde classes,
-properties en voorbeeldqueries (laatst bijgewerkt 2026-07-05). Een predicaat
-staat expliciet als **nog niet los geverifieerd** gemarkeerd:
+properties en voorbeeldqueries (laatst bijgewerkt 2026-10-30). Alle eerder
+als "nog niet los geverifieerd" gemarkeerde predicaten zijn inmiddels bevestigd:
 
-- `imxgeo:bevindtZichOpPerceel` (gebouw -> perceel), gebruikt in template `adres_naar_perceel`.
+- `imxgeo:bevindtZichOpPerceel` (gebouw -> perceel): bevestigd 2026-10-30
+  via ASK en een steekproef van echte gebouw->perceel-koppelingen tegen het
+  live endpoint.
+- `imxgeo:naam`: bevestigd 2026-07-05, maar **alleen op `imxgeo:Gemeentegebied`**
+  (een perceel ligt via `imxgeo:ligtInRegistratieveRuimte` ook in `imxgeo:Buurt`
+  en `imxgeo:Woonplaats`). De query-template en `validate_query` dwingen daarom
+  altijd de restrictie `?plaats a imxgeo:Gemeentegebied` af -- zie
+  `spec_data.CLASS_RESTRICTED_PREDICATES`.
 
-Bij het bouwen van deze MCP is geprobeerd dit alsnog te verifieren via curl
-tegen `api.labs.kadaster.nl`, maar dat werd geblokkeerd door het
-netwerkbeleid van de bouw-sandbox (403 op de CONNECT). Het predicaat is
-daarom als `unverified` opgenomen in `spec_data.UNVERIFIED_PREDICATES`:
-`plan_question`, `build_query` en `validate_query` geven hier een expliciete
-waarschuwing bij. Draai `scripts/smoke_test.py` vanaf een omgeving met
-toegang tot `api.labs.kadaster.nl` om het alsnog te bevestigen en werk dan
-`kkg_spec.json` bij.
-
-`imxgeo:naam` is inmiddels wel bevestigd, maar **alleen op `imxgeo:Gemeentegebied`**
-(een perceel ligt via `imxgeo:ligtInRegistratieveRuimte` ook in `imxgeo:Buurt`
-en `imxgeo:Woonplaats`). De query-template en `validate_query` dwingen daarom
-altijd de restrictie `?plaats a imxgeo:Gemeentegebied` af -- zie
-`spec_data.CLASS_RESTRICTED_PREDICATES`.
+`spec_data.UNVERIFIED_PREDICATES` is nu leeg, maar blijft als mechanisme
+bestaan voor een eventueel toekomstig nog-niet-bevestigd predicaat.
 
 ## Endpoint
 
@@ -42,6 +37,16 @@ altijd de restrictie `?plaats a imxgeo:Gemeentegebied` af -- zie
 
 ## Bekende beperkingen van de graph
 
+- **`ORDER BY` op een class-scan-variabele timet uit**: `ORDER BY ?x` waarbij
+  `?x` alleen via `?x a imxgeo:Klasse` gebonden is (geen verdere selectieve
+  restrictie) timet uit op grote classes zoals `imxgeo:Perceel` (~8,4 miljoen
+  instances) -- bevestigd 2026-10-30, **onafhankelijk van `OPTIONAL`-joins**
+  en ook met een op het oog restrictieve `FILTER` erbij (bv. `ext:sectie "A"`,
+  dat landelijk nog honderdduizenden percelen omvat). Dit is dus een ander
+  patroon dan de `ORDER BY + OPTIONAL`-504 die op het RCE CHO-endpoint is
+  gevonden: op KKG is de class-scan zelf al het probleem. `validate_query`
+  waarschuwt hiervoor. Gebruik keyset-paginering (`build_paginated_query`)
+  of een vaste subject-URI.
 - **Geen paginering > 10.000 rijen via OFFSET**: Virtuoso (de triplestore
   achter KKG) weigert `ORDER BY` + `OFFSET` zodra `LIMIT+OFFSET > 10.000`.
   Gebruik keyset-paginering (`build_paginated_query` / `pagination_help`):
@@ -135,7 +140,7 @@ tussen requests. Standaardwaarden komen uit het productiescript
 
 | Template | Parameters | Status |
 |---|---|---|
-| `adres_naar_perceel` | `postcode`, `huisnummer`, `limit?` | gebruikt `imxgeo:bevindtZichOpPerceel` (**unverified**) |
+| `adres_naar_perceel` | `postcode`, `huisnummer`, `limit?` | bevestigd werkend (incl. `imxgeo:bevindtZichOpPerceel`, 2026-10-30) |
 | `kadastrale_aanduiding_naar_perceel` | `sectie`, `perceelnummer`, `gemeente`, `limit?` | bevestigd; forceert class-restrictie op `imxgeo:Gemeentegebied` |
 | `beperking_op_perceel` | `perceel_uri`, `limit?` | bevestigd werkend |
 | `classes_met_aantallen` | `limit?` | bevestigd werkend |
